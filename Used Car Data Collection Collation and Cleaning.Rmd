@@ -1,0 +1,371 @@
+---
+title: "Used Car Data Collection, Collation, and Cleaning"
+author: #######
+output: html_document
+---
+## Project Overview 
+
+This is part one of a larger end to end data science project. The final code and walkthrough below demonstrate a method to collect, collate, and clean data for further analysis or modeling.
+
+### The Project Task
+
+This Used Car project will be an end to end project which will demonstrate and accomplish critical steps in data science. I will start with data collection, collation, and cleaning to create a robust dataset for future exploratory data analysis, visualization, modeling. In the last and most important step I will interpret the results and demonstrate a way the results could be effectively communicated to provide a solution to the identified use cases oroblems. Effective communication of the results is the most important step because the end state of the data science endeavours is to support making better decisions. 
+
+### Project goals: 
+The intent of doing the project: My primary intent is to propose solutions from data insights pertaining to identified use case problems. Secondarily my intent is to complete an end to end data science project which formally demonstrates R programming, analytical, problem solving, and communication skills.
+
+## Collection
+
+First we need to load some packages we require for scraping and cleaning. We will install and load "rvest", "dplyr", "DescTools", "stringr", and "tidyr".
+```{r Attach Required Packages, echo=TRUE, warning=FALSE, include=FALSE}
+library(rvest)
+library(dplyr)
+library(DescTools)
+library(stringr)
+library(tidyr)
+```
+
+We set the working directory to ensure maintain organization while loading and saving required input and output data. 
+```{r Set Working Directory, echo=TRUE, warning=FALSE}
+setwd("~/Desktop/R Projects/Car Data Project")
+```
+
+We want to pull samples of the used car market from across the country on the used car website. Ideally, we get even sample sizes from the various used car markets selected. We can use wikipedia to pull the top 20 cities from accross the United States by population. Next, using excel, I quickly made a location list with associated url format required by the used car website and saved as a .csv. I also use the location list to store url link partials to be concatenated in the for loops. This will be useful when we try iterate through the locations during the scrape. 
+```{r Load Search Locations, echo=TRUE, warning=FALSE}
+locations <- read.csv("~/Desktop/R Projects/Car Data Project/location_list.csv", stringsAsFactors=FALSE)
+locations <- locations[1:20,]
+```
+
+
+```{r Store Base Web URL, warning=FALSE, include=FALSE}
+locations$LinkPartial2 <- "&searchRadius=200&sort[]=best_match"
+baseURL <- "https://www.truecar.com"
+```
+
+Next, we initialize the data frames and variables required for the scraping the loop and trouble shooting the page. Due to the size and duration of the scrape, errors inevitably occurred. Initializing step variables supports troubleshooting the collection script. Two data frames need to be initialized due to local environments within loops. The first data frame stores one page of scraped data while the second data frame compiles the newly scraped page with previously scraped and stored pages. 
+```{r Initialize Variables, echo=TRUE, warning=FALSE}
+car_data = data.frame()
+all_car_data = data.frame()
+i = 1
+j = 1
+page_result = 2
+
+```
+
+Combining the locations list, initialized variables, and the paste0() function, the first page is defined in the object url. We then use the read_html() function to create an object which stores the html information to the object page so that we can scrape only the desired information.
+```{r Read HTML, echo=TRUE, warning=FALSE}
+url = paste0(locations$LinkPartial[j], page_result,locations$LinkPartial2[j])
+page <- read_html(url)
+```
+
+Next, I used the google chrome selector gadget tool on the used car website to identify the css of the critical information. The website displayed the essentials for used car exploratory data analysis and a pricing model: year, make, model, milege, and price. There were also details on car colors, range from defined search location, and the number of accidents. These additioanl features could be useful later on when pivoting through the data and determining the impact of the respective feature on the pricing model. 
+
+After encountering some errors while troubleshooting the loop, I discovered that sometimes more than thirty cars are displayed. A crude but simple fix was to only accept up to thirty cars per page to be stored in the car_data data frame for the individual page. I also added in the date and search location. 
+
+While I do not have intention at this time, I think it could be interesting to regularly scrape monthly or even weekly. Doing so could allow analysis on seasonality of used car sales. I am also curious whether used car prices are reduced towards the end of the month in an attempt to move dealership off brand cars from the lot.
+```{r Select data and scrape car listings from ONE page, echo=TRUE, warning=FALSE}
+
+car_title = page %>% html_nodes(".vehicle-header-make-model") %>% html_text()
+car_year = page %>% html_nodes(".vehicle-card-year") %>% html_text()
+car_price = page %>% html_nodes(".vehicle-card-bottom-max-50") %>% html_text()
+car_mileage = page %>% html_nodes(".font-size-1.text-truncate:nth-child(1)") %>% html_text()
+car_accidents = page %>% html_nodes(".border-top+ .margin-top-1") %>% html_text()
+car_location = page %>% html_nodes(".justify-content-between+ .margin-top-1") %>% html_text()
+car_color = page %>% html_nodes(".margin-top-1.text-truncate") %>% html_text()
+car_page = page %>% html_nodes(".vehicle-card-overlay") %>% html_attr("href") %>% paste0(baseURL,.)
+
+car_title = car_title[1:30]
+car_year = car_year[1:30]
+car_price = car_price[1:30]
+car_mileage = car_mileage[1:30]
+car_accidents = car_accidents[1:30]
+car_location = car_location[1:30]
+car_page = car_page[1:30]
+car_color = car_color[1:30]
+
+Date = Sys.Date()
+Search_Location = locations$Location[j]
+```
+
+Here we define the data frame and bind the data frame to the data frame which will store all of the car data from mulitple pages. Then we can look at the data scraped. 
+```{r Organize and bind the data frame , echo=TRUE, warning=FALSE}
+
+car_data = data.frame(Date,car_title,car_year,car_price, car_mileage, car_accidents, car_color, car_location, Search_Location, stringsAsFactors = FALSE)
+
+all_car_data = rbind.data.frame(all_car_data,car_data)
+
+head(all_car_data)
+
+```
+
+...Success. The scrape pulled in the data as displayed on the used car website. Unfortunately, but expected, the data is not as clean as we need it for follow on analysis and modeling. At first glance, most of the variables in the data frame are characters to include features we desire to be numeric. There are some undesired text characters in multiple variables. Lastly, some of the variables contain more than one piece of information. We will set out to address these issues systematically and update the class structure as we go. 
+
+## Cleaning 
+
+First, to clean car mileage.
+
+```{r Cleaning Car Mileage, echo=TRUE, warning=FALSE}
+#Clean the car mileage, remove commas, coerce to numeric, remove miles text
+all_car_data$car_mileage<- as.character(StrLeft(all_car_data$car_mileage,-6))
+all_car_data$car_mileage<- as.numeric(str_replace_all(all_car_data$car_mileage, "[^[:alnum:]]", ""))
+```
+
+Cleaning car Year.
+
+```{r Cleaning Car Year, echo=TRUE, warning=FALSE}
+#Clean the car year data, coerce to numeric
+all_car_data$car_year <- as.numeric(all_car_data$car_year)
+```
+
+Cleaning car Price.
+
+```{r Cleaning Car Price, echo=TRUE, warning=FALSE}
+#Clean the car price data, remove the $ sign and comma
+all_car_data$car_price <- as.numeric(str_replace_all(all_car_data$car_price, "[^[:alnum:]]", ""))
+```
+
+Separating car Accidents.
+
+```{r Seperating Car Accidents, echo=TRUE, warning=FALSE}
+#Separate car accident data because it contains three different variables. 
+all_car_data <- separate(all_car_data, col =  car_accidents, into = c("Accidents","Owners","Fleet_Use"), sep = ", " )
+```
+
+Cleaning Car Accidents, Owners, and Fleet Use. These could be integers or factors depending on what visualization or analysis we desire later.
+
+```{r Cleaning Car Accidents/Owners/Fleet Use, echo=TRUE, warning=FALSE}
+#Remove accidents/accident, convert no accidents to 0
+all_car_data$Accidents <- StrLeft(all_car_data$Accidents,1)
+all_car_data$Accidents<- as.factor(replace(all_car_data$Accidents, all_car_data$Accidents=="N", 0))
+
+#Remove owner/owners, handle the NA by assuming one owner
+all_car_data$Owners <- as.numeric(StrLeft(all_car_data$Owners,1))
+all_car_data$Owners <- as.factor(replace(all_car_data$Owners, all_car_data$Owners == "NA",1))
+
+#Fleet Use to 1, Personal Use to Zero
+all_car_data$Fleet_Use <- replace(all_car_data$Fleet_Use, all_car_data$Fleet_Use=="Fleet use", 1)
+all_car_data$Fleet_Use <- replace(all_car_data$Fleet_Use, all_car_data$Fleet_Use=="Personal use", 0)
+all_car_data$Fleet_Use <- as.factor(all_car_data$Fleet_Use)
+```
+Cleaning car Colors.
+
+```{r Cleaning Car Colors, echo=TRUE, warning=FALSE}
+#Separate car_color data because it contains two different color variables
+all_car_data <- separate(all_car_data, col =  car_color, into = c("Exterior", "Interior"), sep = ", " )
+all_car_data$Exterior <- StrLeft(all_car_data$Exterior,-9)
+all_car_data$Interior <- StrLeft(all_car_data$Interior,-9)
+```
+
+Cleaning car Location.
+
+```{r Cleaning Car Location, echo=TRUE, warning=FALSE}
+#Clean car location
+#Pull out range
+#Separate city from state
+all_car_data <- separate(all_car_data, col =  car_location, into = c("Range", "Location"), sep = " mi - " )
+all_car_data$Range <- as.numeric(all_car_data$Range)
+
+all_car_data <- separate(all_car_data, col =  Location, into = c("City", "State"), sep = ", " )
+```
+
+Separating car Make and Model.
+
+```{r Cleaning Car Make and Model, echo=TRUE, warning=FALSE}
+#Clean make and model
+all_car_data <- separate(all_car_data, col =  car_title, into = c("Make", "Model"), extra = "merge", fill = "left", sep = " " )
+```
+
+Last thing, we will rename the column names within the data frame to follow a standard format.
+
+```{r Cleaning Car Dataframe Names, echo=TRUE, warning=FALSE}
+#Clean the column names
+colnames(all_car_data)[colnames(all_car_data) == "car_year"] <- "Year"
+colnames(all_car_data)[colnames(all_car_data) == "car_price"] <- "Price"
+colnames(all_car_data)[colnames(all_car_data) == "car_mileage"] <- "Mileage"
+colnames(all_car_data)[colnames(all_car_data) == "car_page"] <- "Link"
+
+head(all_car_data)
+```
+The variables have been combined with data from different pages from the used car website, cleaned, seperated. The class structure of the variable may cause some issues depending on the desired analysis or visualization, but that can be addressed as required. 
+
+Next, we save the data for one search location at the end of the loop. There are pros and cons to this approach. It is beneficial to be able to reference specific locations. Additionally, it helps track where the scrape failed to troubleshoot the scrape without repeating efforts. The downside is that another step is required to collate the data to make a composite dataset with multiple locations. Doing it this way helps running the scrape as a job in lieu of a script that way we can still use the console while the scrape is occuring. 
+
+```{r Write a .csv to store the used car data for a specific location, echo=TRUE, warning=FALSE}
+setwd("~/Desktop/R Projects/Car Data Project/Location Data")
+write.csv(all_car_data, paste0(locations$City[j], "_", locations$Abb[j] ,"_car_data_", Sys.Date(), ".csv"))
+```
+
+
+## Collation and Compilation by Location
+
+Last thing to do before saving, is to collate or compile the location data into a single data frame. 
+
+```{r Collation of stored .csv location files, echo=TRUE, warning=FALSE}
+car_data <- data.frame()
+j <- 1 
+
+file_location <- paste0("~/Desktop/R Projects/Car Data Project/Location Data/", locations$City[j], "_", locations$Abb[j] ,"_car_data_", Sys.Date(), ".csv")
+
+all_car_data <- read.csv(file_location)
+
+car_data <- rbind.data.frame(car_data, all_car_data)
+
+```
+
+
+
+We have the cleaned and collated location data now. All there is left to do is to save it in the final location for future exploratory, data analysis, and modeling. 
+
+```{r Write the all locations into the final dataframe/.csv file, echo=TRUE, warning=FALSE}
+setwd("~/Desktop/R Projects/Car Data Project/Final Data")
+write.csv(car_data, paste0("used_car_data_", Sys.Date(), ".csv"))
+```
+## Conclusion
+
+
+See the complete code below with for loops to iterate through pages and collect car listings in bulk.
+```{r Final Collection and Cleaning Loop, eval=FALSE, warning=FALSE}
+#loop through locations
+for(j in seq(from = 1, to = length(locations$Location))){
+
+  #use webscraping to compile the cars
+  #Create null data frames for data to inputed into in the for loop,...or read in the most recent file, initialize dataframes and i count to be used in the for loop, we need i to periodically close the connection to website
+  car_data = data.frame()
+  all_car_data = data.frame()
+  i = 1
+  
+#Loop through car listings to collect key listing information
+for(page_result in seq(from = 2, to = 101 )){
+  
+  #store & read html
+  #concatenate link partials from the location list and the page result to generate a custum iterative url link
+  url1 = paste0(locations$LinkPartial[j], page_result,locations$LinkPartial2[j])
+  page <- read_html(url1)
+  
+  #identify the nodes from the html and create vectors to store a page's data
+  #used google chrome and the selector gadget extension
+  #sometimes an individual page will have fewer or greater than 30 results
+  #I only want 30 of the results so that dimensions work later
+  car_title = page %>% html_nodes(".vehicle-header-make-model") %>% html_text()
+  car_title = car_title[1:30]
+  car_year = page %>% html_nodes(".vehicle-card-year") %>% html_text()
+  car_year = car_year[1:30]
+  car_price = page %>% html_nodes(".vehicle-card-bottom-max-50") %>% html_text()
+  car_price = car_price[1:30]
+  car_mileage = page %>% html_nodes(".font-size-1.text-truncate:nth-child(1)") %>% html_text()
+  car_mileage = car_mileage[1:30]
+  car_accidents = page %>% html_nodes(".border-top+ .margin-top-1") %>% html_text()
+  car_accidents = car_accidents[1:30]
+  car_location = page %>% html_nodes(".justify-content-between+ .margin-top-1") %>% html_text()
+  car_location = car_location[1:30]
+  car_color = page %>% html_nodes(".margin-top-1.text-truncate") %>% html_text()
+  car_color = car_color[1:30]
+  car_page = page %>% html_nodes(".vehicle-card-overlay") %>% html_attr("href") %>% paste0(baseURL,.)
+  car_page = car_page[1:30]
+  #Record today's date
+  Date = Sys.Date()
+  #Record the search location center
+  Search_Location = locations$Location[j]
+  #construct the 
+  car_data = data.frame(Date,car_title,car_year,car_price, car_mileage, car_accidents, car_color, car_page, car_location, Search_Location,stringsAsFactors = FALSE)
+  
+  #bind one page of car data to the previously stored car data
+  all_car_data = rbind.data.frame(all_car_data,car_data)
+  
+  #this may take some time. this way we can track progress, uesed for troubleshooting
+  #print(paste0("Page: ", page_result, " Center Location: ",locations$Location[j], " Percent Complete: ", j*page_result/(100*length(locations$Location))*100,"%"))
+  
+  #we must be kind to the website we are scraping, allow the system to sleep for a bit.
+  i=i+1
+  if(is.integer(i/10)){Sys.sleep(10)
+    closeAllConnections()}
+  else{Sys.sleep(2)}
+}
+
+#get more data from the car_page
+
+##### 2. Clean the Data #####
+
+#Clean the car mileage, remove commas, coerce to numeric, remove miles text
+all_car_data$car_mileage<- as.character(StrLeft(all_car_data$car_mileage,-6))
+all_car_data$car_mileage<- as.numeric(gsub(",","",all_car_data$car_mileage))
+
+#clean the car year data, coerce to numeric
+all_car_data$car_year <- as.numeric(all_car_data$car_year)
+
+#clean the car price data, remove the $ sign and comma
+all_car_data$car_price <- as.numeric(str_replace_all(all_car_data$car_price, "[^[:alnum:]]", "")) 
+
+#separate car accident data because it contains three different variables. 
+all_car_data <- separate(all_car_data, col =  car_accidents, into = c("Accidents", "Owners","Fleet_Use"), sep = ", " )
+
+#remove accidents/accident, convert no accidents to 0
+all_car_data$Accidents <- StrLeft(all_car_data$Accidents,1)
+all_car_data$Accidents<- as.factor(replace(all_car_data$Accidents, all_car_data$Accidents=="N", 0))
+
+#remove owner/owners
+all_car_data$Owners <- as.numeric(StrLeft(all_car_data$Owners,1))
+all_car_data$Owners <- as.factor(replace(all_car_data$Owners, all_car_data$Owners == "NA",1))
+
+#Fleet Use to 1, Personal Use to Zero, Unknown?
+all_car_data$Fleet_Use <- replace(all_car_data$Fleet_Use, all_car_data$Fleet_Use=="Fleet use", 1)
+all_car_data$Fleet_Use <- replace(all_car_data$Fleet_Use, all_car_data$Fleet_Use=="Personal use", 0)
+all_car_data$Fleet_Use <- as.factor(all_car_data$Fleet_Use)
+                                            
+#separate car_color data because it contains two different color variables
+all_car_data <- separate(all_car_data, col =  car_color, into = c("Exterior", "Interior"), sep = ", " )
+all_car_data$Exterior <- StrLeft(all_car_data$Exterior,-9)
+all_car_data$Interior <- StrLeft(all_car_data$Interior,-9)
+
+#clean car location
+#pull out range
+#separate city from state
+all_car_data <- separate(all_car_data, col =  car_location, into = c("Range", "Location"), sep = " mi - " )
+all_car_data$Range <- as.numeric(all_car_data$Range)
+all_car_data <- separate(all_car_data, col =  Location, into = c("City", "State"), sep = ", " )
+
+#clean make and model
+all_car_data <- separate(all_car_data, col =  car_title, into = c("Make", "Model"), extra = "merge", fill = "left", sep = " " )
+
+#Clean the column names
+colnames(all_car_data)[colnames(all_car_data) == "car_year"] <- "Year"
+colnames(all_car_data)[colnames(all_car_data) == "car_price"] <- "Price"
+colnames(all_car_data)[colnames(all_car_data) == "car_mileage"] <- "Mileage"
+colnames(all_car_data)[colnames(all_car_data) == "car_page"] <- "Link"
+
+###Write the car data to a csv file###
+#Write the car data into a csv file in the appropriate working directory
+setwd("~/Desktop/R Projects/Car Data Project/Location Data")
+write.csv(all_car_data, paste0(locations$City[j], "_", locations$Abb[j] ,"_car_data_", Sys.Date(), ".csv"))
+
+}
+#we can run all code above here as a job 
+#due to connection issues, the code periodically cut out, forcing collection to be in smaller parts, the final data will be collated and cleaned at the start of exploratory data analysis.
+#one soluion is to write .csv more frequently when an entire location is completed
+#in doing so, we can complile it all on the back end after the files have been created
+```
+
+```{r Final Collation Loop, eval=FALSE, warning=FALSE}
+### Collation of individual files ###
+#additional cleaning and collation due to breaks in connection during collection
+
+car_data <- data.frame()
+
+for(j in seq(from = 1, to = length(locations$Location))){
+  
+file_location <- paste0("~/Desktop/R Projects/Car Data Project/Location Data/", locations$City[j], "_", locations$Abb[j] ,"_car_data_", Sys.Date(), ".csv")
+
+all_car_data <- read.csv(file_location)
+
+car_data <- rbind.data.frame(car_data, all_car_data)
+
+}
+```
+
+```{r Final Data Write, eval=FALSE, warning=FALSE}
+#write a final .csv for reproducible use later, be careful to not overwrite the final file
+setwd("~/Desktop/R Projects/Car Data Project/Final Data")
+write.csv(car_data, paste0("used_car_data_", Sys.Date(), ".csv"))
+```
+
+
