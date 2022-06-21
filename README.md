@@ -5,6 +5,8 @@ Used car websites often provide an insight into what the value of a car is i.e. 
 
 It was a good experience to learn some R tools like dplyr, tidyr, DataExplorer, ggplot2, and tidyverse while also troubleshooting through data cleaning and collection techniques.
 
-...While I now have the whole distribution of used Toyota 4Runner's for sale, we still don't have a new car.  (COVID, Interest Rates, gas prices etc...)
+While I may have the whole distribution of used Toyota 4Runner's for sale, we still don't have a new car.  (COVID, Interest Rates, gas prices etc...)
 
 Ultimately, the tool could be used to help achieve a decision to buy a used car by examining comparative options in the market at scale. 
+
+Linked to Collection, Cleaning, and Visualization Markdown/HTML: https://rpubs.com/gdhan8/UsedCarDataCollectCleanCollate 
